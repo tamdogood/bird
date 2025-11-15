@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  bird-mcp:
+    build: .
+    container_name: bird-mcp
+    env_file:
+      - .env
+    environment:
+      - TODOIST_API_TOKEN=${TODOIST_API_TOKEN}
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    volumes:
+      # Mount Obsidian vault if needed (update path)
+      # - /path/to/obsidian/vault:/app/vault:ro
+      # Mount for local development
+      - ./src:/app/src:ro
