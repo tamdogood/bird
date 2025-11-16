@@ -1,25 +1,25 @@
 """Main MCP server for Bird personal assistant."""
 
 import os
+import sys
 import logging
 from typing import Any
 from datetime import datetime
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 
-# Configure logging
+# Configure logging to stderr to avoid interfering with MCP protocol (stdout)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
+    handlers=[logging.StreamHandler(stream=sys.stderr)],
 )
 
 logger = logging.getLogger(__name__)
 
 # Handle imports for both installed package and direct script execution
-import sys
-from pathlib import Path
 
 # Add src directory to path if not installed as package
 if str(Path(__file__).parent.parent.parent / "src") not in sys.path:
@@ -27,6 +27,7 @@ if str(Path(__file__).parent.parent.parent / "src") not in sys.path:
 
 from bird_mcp.todoist_tools import TodoistTools
 from bird_mcp.anki_tools import AnkiTools
+from bird_mcp.obsidian_tools import ObsidianTools
 
 # Load environment variables
 load_dotenv()
@@ -51,6 +52,19 @@ anki_url = os.getenv("ANKI_CONNECT_URL", "http://localhost:8765")
 logger.info(f"Initializing Anki integration at {anki_url}...")
 anki = AnkiTools(anki_url)
 logger.info("Anki integration initialized (connection will be tested on first use)")
+
+# Initialize Obsidian (optional)
+obsidian_vault = os.getenv("OBSIDIAN_VAULT_PATH")
+obsidian = None
+if obsidian_vault:
+    try:
+        logger.info(f"Initializing Obsidian integration at {obsidian_vault}...")
+        obsidian = ObsidianTools(obsidian_vault)
+        logger.info("Obsidian integration initialized successfully")
+    except Exception as e:
+        logger.warning(f"Obsidian integration disabled: {e}")
+else:
+    logger.info("Obsidian integration disabled (OBSIDIAN_VAULT_PATH not set)")
 
 
 # Health Check Tool
@@ -96,8 +110,33 @@ async def health_check() -> dict[str, Any]:
         logger.error(f"Anki health check failed: {e}")
         results["services"]["anki"] = {"status": "error", "message": str(e)}
 
+    # Check Obsidian
+    if obsidian:
+        try:
+            logger.info("Performing Obsidian health check...")
+            stats = await obsidian.get_vault_stats()
+            results["services"]["obsidian"] = {
+                "status": "connected" if stats["success"] else "error",
+                "message": (
+                    "Successfully connected to Obsidian vault"
+                    if stats["success"]
+                    else stats.get("error")
+                ),
+                "note_count": stats["stats"].get("total_notes", 0) if stats["success"] else None,
+            }
+        except Exception as e:
+            logger.error(f"Obsidian health check failed: {e}")
+            results["services"]["obsidian"] = {"status": "error", "message": str(e)}
+    else:
+        results["services"]["obsidian"] = {
+            "status": "disabled",
+            "message": "Obsidian integration not configured (set OBSIDIAN_VAULT_PATH)",
+        }
+
     # Overall status
-    all_statuses = [svc["status"] for svc in results["services"].values()]
+    all_statuses = [
+        svc["status"] for svc in results["services"].values() if svc["status"] != "disabled"
+    ]
     if all(status == "connected" for status in all_statuses):
         results["overall_status"] = "healthy"
     elif any(status == "connected" for status in all_statuses):
@@ -447,6 +486,132 @@ async def anki_delete_notes(note_ids: list[int]) -> dict[str, Any]:
         note_ids: List of note IDs to delete
     """
     return await anki.delete_notes(note_ids=note_ids)
+
+
+# Obsidian Tools
+
+
+@mcp.tool()
+async def obsidian_create_note(
+    title: str,
+    content: str,
+    folder: str = "",
+    tags: list[str] | None = None,
+    frontmatter: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create a new note in Obsidian vault.
+
+    Args:
+        title: Note title (becomes filename)
+        content: Note content in markdown
+        folder: Subfolder path (e.g., "6 - main notes")
+        tags: List of tags
+        frontmatter: Additional YAML frontmatter fields
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.create_note(title, content, folder, tags, frontmatter)
+
+
+@mcp.tool()
+async def obsidian_read_note(note_path: str) -> dict[str, Any]:
+    """Read a note from Obsidian vault.
+
+    Args:
+        note_path: Relative path from vault root (e.g., "6 - main notes/My Note.md")
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.read_note(note_path)
+
+
+@mcp.tool()
+async def obsidian_update_note(
+    note_path: str,
+    content: str | None = None,
+    frontmatter: dict[str, Any] | None = None,
+    append: bool = False,
+) -> dict[str, Any]:
+    """Update an existing note in Obsidian vault.
+
+    Args:
+        note_path: Relative path to note
+        content: New content (or content to append if append=True)
+        frontmatter: New/updated frontmatter fields
+        append: If True, append content instead of replacing
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.update_note(note_path, content, frontmatter, append)
+
+
+@mcp.tool()
+async def obsidian_delete_note(note_path: str) -> dict[str, Any]:
+    """Delete a note from Obsidian vault.
+
+    Args:
+        note_path: Relative path to note
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.delete_note(note_path)
+
+
+@mcp.tool()
+async def obsidian_search_notes(
+    query: str,
+    folder: str | None = None,
+    tag: str | None = None,
+) -> dict[str, Any]:
+    """Search notes in Obsidian vault.
+
+    Args:
+        query: Text to search for in note content
+        folder: Limit search to specific folder
+        tag: Filter by tag
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.search_notes(query, folder, tag)
+
+
+@mcp.tool()
+async def obsidian_list_notes(
+    folder: str = "",
+    recursive: bool = True,
+) -> dict[str, Any]:
+    """List all notes in Obsidian vault or specific folder.
+
+    Args:
+        folder: Folder to list (empty = root)
+        recursive: Include subfolders
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.list_notes(folder, recursive)
+
+
+@mcp.tool()
+async def obsidian_get_daily_note(date: str | None = None) -> dict[str, Any]:
+    """Get or create daily note for a specific date.
+
+    Args:
+        date: Date in YYYY-MM-DD format (default: today)
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.get_daily_note(date)
+
+
+@mcp.tool()
+async def obsidian_get_vault_stats() -> dict[str, Any]:
+    """Get statistics about the Obsidian vault.
+
+    Returns total notes, size, and folder distribution.
+    """
+    if not obsidian:
+        return {"success": False, "error": "Obsidian integration not configured"}
+    return await obsidian.get_vault_stats()
 
 
 def main():
