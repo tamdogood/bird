@@ -1,31 +1,33 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
+# Copy uv binary from the official uv image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Set working directory
 WORKDIR /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_SYSTEM_PYTHON=1
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock* ./
 
-# Install dependencies including MCP CLI
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir 'mcp[cli]'
+# Install dependencies using uv (frozen lockfile if available)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project || uv sync --no-install-project
 
 # Copy source code
 COPY src/ ./src/
-COPY pyproject.toml .
 
 # Install the package
-RUN pip install -e .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen || uv sync
 
 # Expose MCP Inspector ports
 EXPOSE 6274 6277
 
 # Run the MCP server directly (production mode)
-CMD ["python", "-m", "bird_mcp.server"]
+CMD ["uv", "run", "python", "-m", "bird_mcp.server"]
