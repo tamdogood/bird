@@ -1,5 +1,6 @@
 """Todoist integration tools for the Bird MCP server."""
 
+import asyncio
 from datetime import datetime
 from typing import Any, Optional
 from collections import defaultdict
@@ -39,7 +40,8 @@ class TodoistTools:
             Created task details
         """
         try:
-            task = self.api.add_task(
+            task = await asyncio.to_thread(
+                self.api.add_task,
                 content=content,
                 description=description,
                 project_id=project_id,
@@ -81,7 +83,8 @@ class TodoistTools:
             List of tasks matching the criteria
         """
         try:
-            tasks = self.api.get_tasks(
+            tasks = await asyncio.to_thread(
+                self.api.get_tasks,
                 project_id=project_id,
                 label=label,
                 filter=filter_string,
@@ -117,7 +120,7 @@ class TodoistTools:
             Success status
         """
         try:
-            self.api.close_task(task_id=task_id)
+            await asyncio.to_thread(self.api.close_task, task_id=task_id)
             return {"success": True, "message": f"Task {task_id} marked as completed"}
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -146,7 +149,8 @@ class TodoistTools:
             Updated task details
         """
         try:
-            task = self.api.update_task(
+            task = await asyncio.to_thread(
+                self.api.update_task,
                 task_id=task_id,
                 content=content,
                 description=description,
@@ -177,8 +181,8 @@ class TodoistTools:
         """
         try:
             # Get all active tasks
-            tasks = self.api.get_tasks()
-            projects = self.api.get_projects()
+            tasks = await asyncio.to_thread(self.api.get_tasks)
+            projects = await asyncio.to_thread(self.api.get_projects)
 
             # Build project name mapping
             project_map = {project.id: project.name for project in projects}
@@ -247,7 +251,7 @@ class TodoistTools:
             List of all projects
         """
         try:
-            projects = self.api.get_projects()
+            projects = await asyncio.to_thread(self.api.get_projects)
             project_list = [
                 {
                     "id": project.id,

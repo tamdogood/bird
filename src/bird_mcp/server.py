@@ -1,10 +1,21 @@
 """Main MCP server for Bird personal assistant."""
 
 import os
+import logging
 from typing import Any
+from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+
+logger = logging.getLogger(__name__)
 
 # Handle imports for both installed package and direct script execution
 import sys
@@ -20,19 +31,84 @@ from bird_mcp.anki_tools import AnkiTools
 # Load environment variables
 load_dotenv()
 
+logger.info("Bird MCP Server starting...")
+
 # Initialize FastMCP server
 mcp = FastMCP("Bird Personal Assistant")
 
 # Initialize integrations
 todoist_token = os.getenv("TODOIST_API_TOKEN")
 if not todoist_token:
+    logger.error("TODOIST_API_TOKEN environment variable is required")
     raise ValueError("TODOIST_API_TOKEN environment variable is required")
 
+logger.info("Initializing Todoist integration...")
 todoist = TodoistTools(todoist_token)
+logger.info("Todoist integration initialized successfully")
 
 # Initialize Anki (optional - will work even if AnkiConnect is not running)
 anki_url = os.getenv("ANKI_CONNECT_URL", "http://localhost:8765")
+logger.info(f"Initializing Anki integration at {anki_url}...")
 anki = AnkiTools(anki_url)
+logger.info("Anki integration initialized (connection will be tested on first use)")
+
+
+# Health Check Tool
+
+@mcp.tool()
+async def health_check() -> dict[str, Any]:
+    """Check the health and connectivity of all integrated services.
+
+    Returns status for Todoist, Anki, and future integrations.
+    """
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "services": {}
+    }
+
+    # Check Todoist
+    try:
+        logger.info("Performing Todoist health check...")
+        projects = await todoist.get_projects()
+        results["services"]["todoist"] = {
+            "status": "connected" if projects["success"] else "error",
+            "message": "Successfully connected to Todoist" if projects["success"] else projects.get("error"),
+            "project_count": projects.get("count", 0) if projects["success"] else None
+        }
+    except Exception as e:
+        logger.error(f"Todoist health check failed: {e}")
+        results["services"]["todoist"] = {
+            "status": "error",
+            "message": str(e)
+        }
+
+    # Check Anki
+    try:
+        logger.info("Performing Anki health check...")
+        decks = await anki.get_decks()
+        results["services"]["anki"] = {
+            "status": "connected" if decks["success"] else "disconnected",
+            "message": "Successfully connected to AnkiConnect" if decks["success"] else decks.get("error"),
+            "deck_count": decks.get("count", 0) if decks["success"] else None
+        }
+    except Exception as e:
+        logger.error(f"Anki health check failed: {e}")
+        results["services"]["anki"] = {
+            "status": "error",
+            "message": str(e)
+        }
+
+    # Overall status
+    all_statuses = [svc["status"] for svc in results["services"].values()]
+    if all(status == "connected" for status in all_statuses):
+        results["overall_status"] = "healthy"
+    elif any(status == "connected" for status in all_statuses):
+        results["overall_status"] = "degraded"
+    else:
+        results["overall_status"] = "unhealthy"
+
+    logger.info(f"Health check complete: {results['overall_status']}")
+    return results
 
 
 # Todoist Tools
@@ -278,3 +354,12 @@ async def anki_unsuspend_cards(card_ids: list[int]) -> dict[str, Any]:
         card_ids: List of card IDs to unsuspend
     """
     return await anki.unsuspend_cards(card_ids=card_ids)
+
+
+def main():
+    """Run the MCP server."""
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()

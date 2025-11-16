@@ -1,4 +1,4 @@
-# Use Python 3.11 slim image
+# Development Dockerfile with MCP Inspector
 FROM python:3.11-slim
 
 # Set working directory
@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install dependencies including MCP CLI
+# Install dependencies including MCP CLI for development
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir 'mcp[cli]'
 
@@ -21,11 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 COPY src/ ./src/
 COPY pyproject.toml .
 
-# Install the package
+# Install the package in editable mode
 RUN pip install -e .
 
 # Expose MCP Inspector ports
 EXPOSE 6274 6277
 
-# Run the MCP server directly (production mode)
-CMD ["python", "-m", "bird_mcp.server"]
+# Run the MCP server in development mode with inspector
+CMD ["mcp", "dev", "src/bird_mcp/server.py"]
