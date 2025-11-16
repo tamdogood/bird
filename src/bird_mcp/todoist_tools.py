@@ -69,7 +69,6 @@ class TodoistTools:
         self,
         project_id: Optional[str] = None,
         label: Optional[str] = None,
-        filter_string: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Retrieve tasks from Todoist.
@@ -77,18 +76,24 @@ class TodoistTools:
         Args:
             project_id: Filter by project ID
             label: Filter by label name
-            filter_string: Todoist filter string (e.g., "today", "overdue")
 
         Returns:
             List of tasks matching the criteria
+
+        Note: filter_string parameter removed in todoist-api-python v3.x
         """
         try:
-            tasks = await asyncio.to_thread(
-                self.api.get_tasks,
-                project_id=project_id,
-                label=label,
-                filter=filter_string,
+            # get_tasks returns ResultsPaginator -> [[Task, Task, ...]]
+            # Flatten the nested list structure
+            tasks_result = await asyncio.to_thread(
+                lambda: list(self.api.get_tasks(
+                    project_id=project_id,
+                    label=label,
+                    # Note: filter parameter removed in todoist-api-python v3.x
+                ))
             )
+            # Flatten: [[tasks]] -> [tasks]
+            tasks = tasks_result[0] if tasks_result else []
 
             task_list = [
                 {
@@ -180,9 +185,12 @@ class TodoistTools:
             Statistics about tasks including counts by priority, project, and labels
         """
         try:
-            # Get all active tasks
-            tasks = await asyncio.to_thread(self.api.get_tasks)
-            projects = await asyncio.to_thread(self.api.get_projects)
+            # Get all active tasks - flatten nested list structure
+            tasks_result = await asyncio.to_thread(lambda: list(self.api.get_tasks()))
+            tasks = tasks_result[0] if tasks_result else []
+
+            projects_result = await asyncio.to_thread(lambda: list(self.api.get_projects()))
+            projects = projects_result[0] if projects_result else []
 
             # Build project name mapping
             project_map = {project.id: project.name for project in projects}
@@ -251,7 +259,11 @@ class TodoistTools:
             List of all projects
         """
         try:
-            projects = await asyncio.to_thread(self.api.get_projects)
+            # get_projects returns ResultsPaginator -> [[Project, ...]]
+            # Flatten the nested list structure
+            projects_result = await asyncio.to_thread(lambda: list(self.api.get_projects()))
+            projects = projects_result[0] if projects_result else []
+
             project_list = [
                 {
                     "id": project.id,
@@ -293,7 +305,9 @@ class TodoistTools:
             List of comments
         """
         try:
-            comments = await asyncio.to_thread(self.api.get_comments, task_id=task_id)
+            # get_comments returns ResultsPaginator -> [[Comment, ...]]
+            comments_result = await asyncio.to_thread(lambda: list(self.api.get_comments(task_id=task_id)))
+            comments = comments_result[0] if comments_result else []
             comment_list = [
                 {
                     "id": comment.id,
@@ -342,6 +356,7 @@ class TodoistTools:
             List of labels
         """
         try:
+            # get_labels returns a list directly
             labels = await asyncio.to_thread(self.api.get_labels)
             label_list = [
                 {
@@ -368,7 +383,8 @@ class TodoistTools:
             List of sections
         """
         try:
-            sections = await asyncio.to_thread(self.api.get_sections, project_id=project_id)
+            # get_sections returns a list directly
+            sections = await asyncio.to_thread(lambda: self.api.get_sections(project_id=project_id))
             section_list = [
                 {
                     "id": section.id,

@@ -146,19 +146,18 @@ async def todoist_create_task(
 async def todoist_get_tasks(
     project_id: str | None = None,
     label: str | None = None,
-    filter_string: str | None = None,
 ) -> dict[str, Any]:
     """Retrieve tasks from Todoist with optional filters.
 
     Args:
         project_id: Filter by project ID
         label: Filter by label name
-        filter_string: Todoist filter string (e.g., 'today', 'overdue', 'p1')
+
+    Note: Advanced filtering via filter strings was removed in todoist-api-python v3.x
     """
     return await todoist.get_tasks(
         project_id=project_id,
         label=label,
-        filter_string=filter_string,
     )
 
 
