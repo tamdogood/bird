@@ -28,6 +28,7 @@ if str(Path(__file__).parent.parent.parent / "src") not in sys.path:
 from bird_mcp.todoist_tools import TodoistTools
 from bird_mcp.anki_tools import AnkiTools
 from bird_mcp.obsidian_tools import ObsidianTools
+from bird_mcp.google_calendar_tools import GoogleCalendarTools
 
 # Load environment variables
 load_dotenv()
@@ -65,6 +66,23 @@ if obsidian_vault:
         logger.warning(f"Obsidian integration disabled: {e}")
 else:
     logger.info("Obsidian integration disabled (OBSIDIAN_VAULT_PATH not set)")
+
+# Initialize Google Calendar (optional)
+gcal_credentials = os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH")
+gcal_token = os.getenv("GOOGLE_CALENDAR_TOKEN_PATH")
+google_calendar = None
+if gcal_credentials:
+    try:
+        logger.info(f"Initializing Google Calendar integration...")
+        google_calendar = GoogleCalendarTools(
+            credentials_path=gcal_credentials,
+            token_path=gcal_token,
+        )
+        logger.info("Google Calendar integration initialized successfully")
+    except Exception as e:
+        logger.warning(f"Google Calendar integration disabled: {e}")
+else:
+    logger.info("Google Calendar integration disabled (GOOGLE_CALENDAR_CREDENTIALS_PATH not set)")
 
 
 # Health Check Tool
@@ -131,6 +149,29 @@ async def health_check() -> dict[str, Any]:
         results["services"]["obsidian"] = {
             "status": "disabled",
             "message": "Obsidian integration not configured (set OBSIDIAN_VAULT_PATH)",
+        }
+
+    # Check Google Calendar
+    if google_calendar:
+        try:
+            logger.info("Performing Google Calendar health check...")
+            calendars = await google_calendar.list_calendars()
+            results["services"]["google_calendar"] = {
+                "status": "connected" if calendars["success"] else "error",
+                "message": (
+                    "Successfully connected to Google Calendar"
+                    if calendars["success"]
+                    else calendars.get("error")
+                ),
+                "calendar_count": calendars.get("count", 0) if calendars["success"] else None,
+            }
+        except Exception as e:
+            logger.error(f"Google Calendar health check failed: {e}")
+            results["services"]["google_calendar"] = {"status": "error", "message": str(e)}
+    else:
+        results["services"]["google_calendar"] = {
+            "status": "disabled",
+            "message": "Google Calendar integration not configured (set GOOGLE_CALENDAR_CREDENTIALS_PATH)",
         }
 
     # Overall status
@@ -612,6 +653,250 @@ async def obsidian_get_vault_stats() -> dict[str, Any]:
     if not obsidian:
         return {"success": False, "error": "Obsidian integration not configured"}
     return await obsidian.get_vault_stats()
+
+
+# Google Calendar Tools
+
+
+@mcp.tool()
+async def google_calendar_list_calendars() -> dict[str, Any]:
+    """List all available Google Calendars.
+
+    Returns list of calendars with their IDs, names, and access roles.
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.list_calendars()
+
+
+@mcp.tool()
+async def google_calendar_create_event(
+    summary: str,
+    start_time: str,
+    end_time: str,
+    calendar_id: str = "primary",
+    description: str | None = None,
+    location: str | None = None,
+    attendees: list[str] | None = None,
+    timezone: str = "UTC",
+) -> dict[str, Any]:
+    """Create a new calendar event.
+
+    Args:
+        summary: Event title
+        start_time: Start time in ISO format (e.g., "2025-11-16T10:00:00")
+        end_time: End time in ISO format (e.g., "2025-11-16T11:00:00")
+        calendar_id: Calendar ID (default: "primary" for main calendar)
+        description: Event description (optional)
+        location: Event location (optional)
+        attendees: List of attendee email addresses (optional)
+        timezone: Timezone for the event (default: "UTC")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.create_event(
+        summary=summary,
+        start_time=start_time,
+        end_time=end_time,
+        calendar_id=calendar_id,
+        description=description,
+        location=location,
+        attendees=attendees,
+        timezone=timezone,
+    )
+
+
+@mcp.tool()
+async def google_calendar_get_events(
+    time_min: str | None = None,
+    time_max: str | None = None,
+    calendar_id: str = "primary",
+    max_results: int = 10,
+) -> dict[str, Any]:
+    """Get events within a specified time range.
+
+    Args:
+        time_min: Start of time range in ISO format (default: now)
+        time_max: End of time range in ISO format (optional)
+        calendar_id: Calendar ID (default: "primary")
+        max_results: Maximum number of events to return (default: 10)
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.get_events(
+        time_min=time_min,
+        time_max=time_max,
+        calendar_id=calendar_id,
+        max_results=max_results,
+    )
+
+
+@mcp.tool()
+async def google_calendar_update_event(
+    event_id: str,
+    calendar_id: str = "primary",
+    summary: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    description: str | None = None,
+    location: str | None = None,
+    timezone: str = "UTC",
+) -> dict[str, Any]:
+    """Update an existing calendar event.
+
+    Args:
+        event_id: Event ID to update
+        calendar_id: Calendar ID (default: "primary")
+        summary: New event title (optional)
+        start_time: New start time in ISO format (optional)
+        end_time: New end time in ISO format (optional)
+        description: New description (optional)
+        location: New location (optional)
+        timezone: Timezone for the event (default: "UTC")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.update_event(
+        event_id=event_id,
+        calendar_id=calendar_id,
+        summary=summary,
+        start_time=start_time,
+        end_time=end_time,
+        description=description,
+        location=location,
+        timezone=timezone,
+    )
+
+
+@mcp.tool()
+async def google_calendar_delete_event(
+    event_id: str,
+    calendar_id: str = "primary",
+) -> dict[str, Any]:
+    """Delete a calendar event.
+
+    Args:
+        event_id: Event ID to delete
+        calendar_id: Calendar ID (default: "primary")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.delete_event(
+        event_id=event_id,
+        calendar_id=calendar_id,
+    )
+
+
+@mcp.tool()
+async def google_calendar_find_free_slots(
+    time_min: str,
+    time_max: str,
+    duration_minutes: int = 60,
+    calendar_id: str = "primary",
+) -> dict[str, Any]:
+    """Find available time slots in the calendar.
+
+    Args:
+        time_min: Start of time range in ISO format
+        time_max: End of time range in ISO format
+        duration_minutes: Desired duration in minutes (default: 60)
+        calendar_id: Calendar ID (default: "primary")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.find_free_slots(
+        time_min=time_min,
+        time_max=time_max,
+        duration_minutes=duration_minutes,
+        calendar_id=calendar_id,
+    )
+
+
+@mcp.tool()
+async def google_calendar_quick_add(
+    text: str,
+    calendar_id: str = "primary",
+) -> dict[str, Any]:
+    """Create an event using natural language.
+
+    Uses Google's Quick Add feature to parse natural language and create events.
+
+    Args:
+        text: Natural language event description (e.g., "Lunch with John tomorrow at 12pm")
+        calendar_id: Calendar ID (default: "primary")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.quick_add(
+        text=text,
+        calendar_id=calendar_id,
+    )
+
+
+@mcp.tool()
+async def google_calendar_get_today_events(
+    calendar_id: str = "primary",
+) -> dict[str, Any]:
+    """Get all events for today.
+
+    Args:
+        calendar_id: Calendar ID (default: "primary")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.get_today_events(calendar_id=calendar_id)
+
+
+@mcp.tool()
+async def google_calendar_get_upcoming_events(
+    days: int = 7,
+    calendar_id: str = "primary",
+    max_results: int = 20,
+) -> dict[str, Any]:
+    """Get upcoming events for the next N days.
+
+    Args:
+        days: Number of days to look ahead (default: 7)
+        calendar_id: Calendar ID (default: "primary")
+        max_results: Maximum number of events to return (default: 20)
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.get_upcoming_events(
+        days=days,
+        calendar_id=calendar_id,
+        max_results=max_results,
+    )
+
+
+@mcp.tool()
+async def google_calendar_block_study_time(
+    subject: str,
+    start_time: str,
+    duration_minutes: int = 60,
+    calendar_id: str = "primary",
+    timezone: str = "UTC",
+) -> dict[str, Any]:
+    """Create a study block event for learning workflows.
+
+    Designed to integrate with learning workflows - creates focused study time blocks.
+
+    Args:
+        subject: Study subject (e.g., "French Grammar", "AI Course")
+        start_time: Start time in ISO format
+        duration_minutes: Duration in minutes (default: 60)
+        calendar_id: Calendar ID (default: "primary")
+        timezone: Timezone for the event (default: "UTC")
+    """
+    if not google_calendar:
+        return {"success": False, "error": "Google Calendar integration not configured"}
+    return await google_calendar.block_study_time(
+        subject=subject,
+        start_time=start_time,
+        duration_minutes=duration_minutes,
+        calendar_id=calendar_id,
+        timezone=timezone,
+    )
 
 
 def main():
