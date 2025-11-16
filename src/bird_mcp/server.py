@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler()],
 )
 
 logger = logging.getLogger(__name__)
@@ -55,16 +55,14 @@ logger.info("Anki integration initialized (connection will be tested on first us
 
 # Health Check Tool
 
+
 @mcp.tool()
 async def health_check() -> dict[str, Any]:
     """Check the health and connectivity of all integrated services.
 
     Returns status for Todoist, Anki, and future integrations.
     """
-    results = {
-        "timestamp": datetime.now().isoformat(),
-        "services": {}
-    }
+    results = {"timestamp": datetime.now().isoformat(), "services": {}}
 
     # Check Todoist
     try:
@@ -72,15 +70,16 @@ async def health_check() -> dict[str, Any]:
         projects = await todoist.get_projects()
         results["services"]["todoist"] = {
             "status": "connected" if projects["success"] else "error",
-            "message": "Successfully connected to Todoist" if projects["success"] else projects.get("error"),
-            "project_count": projects.get("count", 0) if projects["success"] else None
+            "message": (
+                "Successfully connected to Todoist"
+                if projects["success"]
+                else projects.get("error")
+            ),
+            "project_count": projects.get("count", 0) if projects["success"] else None,
         }
     except Exception as e:
         logger.error(f"Todoist health check failed: {e}")
-        results["services"]["todoist"] = {
-            "status": "error",
-            "message": str(e)
-        }
+        results["services"]["todoist"] = {"status": "error", "message": str(e)}
 
     # Check Anki
     try:
@@ -88,15 +87,14 @@ async def health_check() -> dict[str, Any]:
         decks = await anki.get_decks()
         results["services"]["anki"] = {
             "status": "connected" if decks["success"] else "disconnected",
-            "message": "Successfully connected to AnkiConnect" if decks["success"] else decks.get("error"),
-            "deck_count": decks.get("count", 0) if decks["success"] else None
+            "message": (
+                "Successfully connected to AnkiConnect" if decks["success"] else decks.get("error")
+            ),
+            "deck_count": decks.get("count", 0) if decks["success"] else None,
         }
     except Exception as e:
         logger.error(f"Anki health check failed: {e}")
-        results["services"]["anki"] = {
-            "status": "error",
-            "message": str(e)
-        }
+        results["services"]["anki"] = {"status": "error", "message": str(e)}
 
     # Overall status
     all_statuses = [svc["status"] for svc in results["services"].values()]
@@ -113,6 +111,7 @@ async def health_check() -> dict[str, Any]:
 
 # Todoist Tools
 
+
 @mcp.tool()
 async def todoist_create_task(
     content: str,
@@ -120,7 +119,7 @@ async def todoist_create_task(
     project_id: str | None = None,
     due_string: str | None = None,
     priority: int = 1,
-    labels: list[str] | None = None,
+    labels: list[str] = [],
 ) -> dict[str, Any]:
     """Create a new task in Todoist.
 
@@ -130,15 +129,16 @@ async def todoist_create_task(
         project_id: Project ID to add task to (optional)
         due_string: Due date in natural language (e.g., 'tomorrow', 'next Monday')
         priority: Priority level (1-4, where 4 is highest)
-        labels: List of label names
+        labels: List of label names (default: empty list)
     """
+    logger.info(f"Creating task with content='{content}', labels={labels}")
     return await todoist.create_task(
         content=content,
         description=description,
         project_id=project_id,
         due_string=due_string,
         priority=priority,
-        labels=labels,
+        labels=labels if labels else None,
     )
 
 
@@ -179,7 +179,7 @@ async def todoist_update_task(
     description: str | None = None,
     due_string: str | None = None,
     priority: int | None = None,
-    labels: list[str] | None = None,
+    labels: list[str] = [],
 ) -> dict[str, Any]:
     """Update an existing task.
 
@@ -189,15 +189,16 @@ async def todoist_update_task(
         description: New task description
         due_string: New due date in natural language
         priority: New priority level (1-4)
-        labels: New labels list
+        labels: New labels list (empty list means no change)
     """
+    logger.info(f"Updating task {task_id} with labels={labels}")
     return await todoist.update_task(
         task_id=task_id,
         content=content,
         description=description,
         due_string=due_string,
         priority=priority,
-        labels=labels,
+        labels=labels if labels else None,
     )
 
 
@@ -217,7 +218,55 @@ async def todoist_get_projects() -> dict[str, Any]:
     return await todoist.get_projects()
 
 
+@mcp.tool()
+async def todoist_delete_task(task_id: str) -> dict[str, Any]:
+    """Permanently delete a task.
+
+    Args:
+        task_id: ID of the task to delete
+    """
+    return await todoist.delete_task(task_id=task_id)
+
+
+@mcp.tool()
+async def todoist_get_comments(task_id: str) -> dict[str, Any]:
+    """Get all comments for a task.
+
+    Args:
+        task_id: ID of the task
+    """
+    return await todoist.get_comments(task_id=task_id)
+
+
+@mcp.tool()
+async def todoist_add_comment(task_id: str, content: str) -> dict[str, Any]:
+    """Add a comment to a task.
+
+    Args:
+        task_id: ID of the task
+        content: Comment text
+    """
+    return await todoist.add_comment(task_id=task_id, content=content)
+
+
+@mcp.tool()
+async def todoist_get_labels() -> dict[str, Any]:
+    """Get all available Todoist labels."""
+    return await todoist.get_labels()
+
+
+@mcp.tool()
+async def todoist_get_sections(project_id: str | None = None) -> dict[str, Any]:
+    """Get sections, optionally filtered by project.
+
+    Args:
+        project_id: Project ID to filter sections (optional)
+    """
+    return await todoist.get_sections(project_id=project_id)
+
+
 # Anki Tools
+
 
 @mcp.tool()
 async def anki_create_deck(deck_name: str) -> dict[str, Any]:
@@ -354,6 +403,51 @@ async def anki_unsuspend_cards(card_ids: list[int]) -> dict[str, Any]:
         card_ids: List of card IDs to unsuspend
     """
     return await anki.unsuspend_cards(card_ids=card_ids)
+
+
+@mcp.tool()
+async def anki_get_note_types() -> dict[str, Any]:
+    """Get all available note types (models) in Anki.
+
+    Returns list of note type names like "Basic", "Cloze", etc.
+    """
+    return await anki.get_note_types()
+
+
+@mcp.tool()
+async def anki_update_note(
+    note_id: int,
+    fields: dict[str, str],
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Update an existing Anki note's fields and tags.
+
+    Args:
+        note_id: ID of the note to update
+        fields: Dictionary of field names to new values (e.g., {"Front": "new question", "Back": "new answer"})
+        tags: New tags to replace existing tags (optional)
+    """
+    return await anki.update_note(note_id=note_id, fields=fields, tags=tags)
+
+
+@mcp.tool()
+async def anki_get_note_info(note_ids: list[int]) -> dict[str, Any]:
+    """Get detailed information about specific notes.
+
+    Args:
+        note_ids: List of note IDs to retrieve information for
+    """
+    return await anki.get_note_info(note_ids=note_ids)
+
+
+@mcp.tool()
+async def anki_delete_notes(note_ids: list[int]) -> dict[str, Any]:
+    """Permanently delete notes from Anki.
+
+    Args:
+        note_ids: List of note IDs to delete
+    """
+    return await anki.delete_notes(note_ids=note_ids)
 
 
 def main():

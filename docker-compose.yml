@@ -1,18 +1,61 @@
 version: '3.8'
 
 services:
+  # Production service
   bird-mcp:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: bird-mcp
     env_file:
       - .env
     environment:
       - TODOIST_API_TOKEN=${TODOIST_API_TOKEN}
+      - ANKI_CONNECT_URL=${ANKI_CONNECT_URL:-http://host.docker.internal:8765}
     restart: unless-stopped
     stdin_open: true
     tty: true
+    # For connecting to Anki on host machine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Development service with MCP inspector
+  bird-mcp-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: bird-mcp-dev
+    env_file:
+      - .env
+    environment:
+      - TODOIST_API_TOKEN=${TODOIST_API_TOKEN}
+      - ANKI_CONNECT_URL=${ANKI_CONNECT_URL:-http://host.docker.internal:8765}
+    ports:
+      - "6274:6274"  # MCP Inspector
+      - "6277:6277"  # MCP Inspector WebSocket
     volumes:
-      # Mount Obsidian vault if needed (update path)
-      # - /path/to/obsidian/vault:/app/vault:ro
-      # Mount for local development
       - ./src:/app/src:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    profiles:
+      - dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

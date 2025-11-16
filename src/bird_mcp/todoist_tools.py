@@ -265,3 +265,119 @@ class TodoistTools:
             return {"success": True, "projects": project_list, "count": len(project_list)}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    async def delete_task(self, task_id: str) -> dict[str, Any]:
+        """
+        Permanently delete a task.
+
+        Args:
+            task_id: ID of the task to delete
+
+        Returns:
+            Success status
+        """
+        try:
+            await asyncio.to_thread(self.api.delete_task, task_id=task_id)
+            return {"success": True, "message": f"Task {task_id} deleted permanently"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_comments(self, task_id: str) -> dict[str, Any]:
+        """
+        Get all comments for a task.
+
+        Args:
+            task_id: ID of the task
+
+        Returns:
+            List of comments
+        """
+        try:
+            comments = await asyncio.to_thread(self.api.get_comments, task_id=task_id)
+            comment_list = [
+                {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "posted_at": comment.posted_at,
+                }
+                for comment in comments
+            ]
+            return {"success": True, "comments": comment_list, "count": len(comment_list)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def add_comment(self, task_id: str, content: str) -> dict[str, Any]:
+        """
+        Add a comment to a task.
+
+        Args:
+            task_id: ID of the task
+            content: Comment text
+
+        Returns:
+            Created comment details
+        """
+        try:
+            comment = await asyncio.to_thread(
+                self.api.add_comment,
+                task_id=task_id,
+                content=content
+            )
+            return {
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "posted_at": comment.posted_at,
+                }
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_labels(self) -> dict[str, Any]:
+        """
+        Get all available labels.
+
+        Returns:
+            List of labels
+        """
+        try:
+            labels = await asyncio.to_thread(self.api.get_labels)
+            label_list = [
+                {
+                    "id": label.id,
+                    "name": label.name,
+                    "color": label.color,
+                    "order": label.order,
+                    "is_favorite": label.is_favorite,
+                }
+                for label in labels
+            ]
+            return {"success": True, "labels": label_list, "count": len(label_list)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def get_sections(self, project_id: Optional[str] = None) -> dict[str, Any]:
+        """
+        Get sections (optionally filtered by project).
+
+        Args:
+            project_id: Project ID to filter sections
+
+        Returns:
+            List of sections
+        """
+        try:
+            sections = await asyncio.to_thread(self.api.get_sections, project_id=project_id)
+            section_list = [
+                {
+                    "id": section.id,
+                    "name": section.name,
+                    "project_id": section.project_id,
+                    "order": section.order,
+                }
+                for section in sections
+            ]
+            return {"success": True, "sections": section_list, "count": len(section_list)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

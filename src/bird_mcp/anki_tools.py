@@ -107,6 +107,18 @@ class AnkiTools:
         Returns:
             Success status and note ID
         """
+        # Validate note type exists
+        model_names_result = await self._invoke("modelNames")
+        if not model_names_result["success"]:
+            return model_names_result
+
+        available_models = model_names_result["result"]
+        if note_type not in available_models:
+            return {
+                "success": False,
+                "error": f"Note type '{note_type}' not found. Available types: {', '.join(available_models)}",
+            }
+
         note = {
             "deckName": deck_name,
             "modelName": note_type,
@@ -371,5 +383,84 @@ class AnkiTools:
             return {
                 "success": True,
                 "message": f"Unsuspended {len(card_ids)} cards",
+            }
+        return result
+
+    async def get_note_types(self) -> dict[str, Any]:
+        """
+        Get all available note types (models).
+
+        Returns:
+            List of note type names
+        """
+        result = await self._invoke("modelNames")
+        if result["success"]:
+            return {
+                "success": True,
+                "note_types": result["result"],
+                "count": len(result["result"]),
+            }
+        return result
+
+    async def update_note(
+        self,
+        note_id: int,
+        fields: dict[str, str],
+        tags: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """
+        Update an existing note's fields and tags.
+
+        Args:
+            note_id: ID of the note to update
+            fields: Dictionary of field names to new values (e.g., {"Front": "...", "Back": "..."})
+            tags: New tags to replace existing tags (optional)
+
+        Returns:
+            Success status
+        """
+        note_update = {"id": note_id, "fields": fields}
+        if tags is not None:
+            note_update["tags"] = tags
+
+        result = await self._invoke("updateNoteFields", {"note": note_update})
+        if result["success"]:
+            return {"success": True, "message": f"Note {note_id} updated"}
+        return result
+
+    async def get_note_info(self, note_ids: list[int]) -> dict[str, Any]:
+        """
+        Get detailed information about specific notes.
+
+        Args:
+            note_ids: List of note IDs to retrieve
+
+        Returns:
+            Note information
+        """
+        result = await self._invoke("notesInfo", {"notes": note_ids})
+        if result["success"]:
+            return {
+                "success": True,
+                "notes": result["result"],
+                "count": len(result["result"]),
+            }
+        return result
+
+    async def delete_notes(self, note_ids: list[int]) -> dict[str, Any]:
+        """
+        Permanently delete notes.
+
+        Args:
+            note_ids: List of note IDs to delete
+
+        Returns:
+            Success status
+        """
+        result = await self._invoke("deleteNotes", {"notes": note_ids})
+        if result["success"]:
+            return {
+                "success": True,
+                "message": f"Deleted {len(note_ids)} notes",
             }
         return result
